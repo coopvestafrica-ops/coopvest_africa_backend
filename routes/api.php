@@ -3,118 +3,176 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\KYCController;
-use App\Http\Controllers\TwoFAController;
 use App\Http\Controllers\MemberController;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\LoanController;
 use App\Http\Controllers\LoanApplicationController;
 use App\Http\Controllers\LoanTypeController;
 use App\Http\Controllers\GuarantorController;
+use App\Http\Controllers\KYCController;
+use App\Http\Controllers\TwoFAController;
+
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register API routes for your application. These
+| routes are loaded by the RouteServiceProvider and all of them will
+| be assigned to the "api" middleware group. Make something great!
+|
+*/
 
 // Public routes
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
-    Route::post('/password-reset/request', [AuthController::class, 'requestPasswordReset']);
-    Route::post('/password-reset/confirm', [AuthController::class, 'resetPassword']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
 
-// Protected routes
+// Protected routes (require authentication)
 Route::middleware('auth:sanctum')->group(function () {
+    
     // Auth routes
     Route::prefix('auth')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
-        Route::get('/me', [AuthController::class, 'me']);
-        Route::post('/refresh', [AuthController::class, 'refresh']);
+        Route::get('/user', [AuthController::class, 'user']);
+        Route::put('/update-profile', [AuthController::class, 'updateProfile']);
+        Route::put('/change-password', [AuthController::class, 'changePassword']);
+    });
+
+    // Two-Factor Authentication
+    Route::prefix('2fa')->group(function () {
+        Route::post('/enable', [TwoFAController::class, 'enable']);
+        Route::post('/verify', [TwoFAController::class, 'verify']);
+        Route::post('/disable', [TwoFAController::class, 'disable']);
+        Route::get('/status', [TwoFAController::class, 'status']);
+    });
+
+    // KYC Verification
+    Route::prefix('kyc')->group(function () {
+        Route::get('/', [KYCController::class, 'index']);
+        Route::post('/submit', [KYCController::class, 'submit']);
+        Route::get('/status', [KYCController::class, 'status']);
+        Route::post('/upload-document', [KYCController::class, 'uploadDocument']);
     });
 
     // Member routes
-    Route::prefix('member')->group(function () {
+    Route::prefix('member')->middleware('role:member')->group(function () {
+        Route::get('/dashboard', [MemberController::class, 'dashboard']);
         Route::get('/profile', [MemberController::class, 'profile']);
         Route::put('/profile', [MemberController::class, 'updateProfile']);
-        Route::get('/dashboard', [MemberController::class, 'dashboard']);
-        Route::get('/transactions', [MemberController::class, 'transactions']);
         Route::get('/savings', [MemberController::class, 'savings']);
+        Route::get('/transactions', [MemberController::class, 'transactions']);
         Route::get('/loans', [MemberController::class, 'loans']);
+        Route::get('/contributions', [MemberController::class, 'contributions']);
     });
 
-    // KYC routes
-    Route::prefix('kyc')->group(function () {
-        Route::post('/submit', [KYCController::class, 'submit']);
-        Route::get('/status', [KYCController::class, 'status']);
-    });
-
-    // 2FA routes
-    Route::prefix('2fa')->group(function () {
-        Route::post('/setup', [TwoFAController::class, 'setup']);
-        Route::post('/confirm', [TwoFAController::class, 'confirm']);
-        Route::post('/verify', [TwoFAController::class, 'verify']);
-        Route::post('/disable', [TwoFAController::class, 'disable']);
-    });
-
-    // Loan routes
-    Route::prefix('loans')->group(function () {
-        Route::post('/apply', [LoanController::class, 'apply']);
-        Route::get('/{id}', [LoanController::class, 'show']);
-        Route::post('/calculate', [LoanController::class, 'calculate']);
-        Route::post('/{id}/payment', [LoanController::class, 'makePayment']);
-        
-        // Admin only
-        Route::get('/admin/pending', [LoanController::class, 'pending'])->middleware('admin');
-        Route::post('/{id}/approve', [LoanController::class, 'approve'])->middleware('admin');
-        Route::post('/{id}/reject', [LoanController::class, 'reject'])->middleware('admin');
-    });
-
-    // Loan Applications routes
-    Route::prefix('loan-applications')->group(function () {
-        Route::get('/my-applications', [LoanApplicationController::class, 'getUserApplications']);
-        Route::get('/available-types', [LoanApplicationController::class, 'getAvailableLoanTypes']);
-        Route::post('/create', [LoanApplicationController::class, 'createApplication']);
-        Route::get('/{id}', [LoanApplicationController::class, 'getApplication']);
-        Route::put('/{id}', [LoanApplicationController::class, 'updateApplication']);
-        Route::post('/{id}/submit', [LoanApplicationController::class, 'submitApplication']);
-        Route::post('/{id}/next-stage', [LoanApplicationController::class, 'moveToNextStage'])->middleware('admin');
-        Route::get('/admin/review', [LoanApplicationController::class, 'getApplicationsForReview'])->middleware('admin');
-    });
-
-    // Loan Types routes
+    // Loan Types (Public for members)
     Route::prefix('loan-types')->group(function () {
-        Route::get('/', [LoanTypeController::class, 'index']); // List all active loan types
-        Route::get('/{id}', [LoanTypeController::class, 'show']); // Get specific loan type
-        Route::get('/{id}/calculate', [LoanTypeController::class, 'calculate']); // Calculate loan details
-        
-        // Admin only
-        Route::post('/', [LoanTypeController::class, 'store'])->middleware('admin');
-        Route::put('/{id}', [LoanTypeController::class, 'update'])->middleware('admin');
-        Route::delete('/{id}', [LoanTypeController::class, 'destroy'])->middleware('admin');
-        Route::get('/admin/all', [LoanTypeController::class, 'allWithInactive'])->middleware('admin');
+        Route::get('/', [LoanTypeController::class, 'index']);
+        Route::get('/{id}', [LoanTypeController::class, 'show']);
     });
 
-    // Guarantor routes
-    Route::prefix('loans/{loanId}/guarantors')->group(function () {
-        Route::get('/', [GuarantorController::class, 'index']); // Get all guarantors for a loan
-        Route::post('/invite', [GuarantorController::class, 'invite']); // Invite a guarantor
-        Route::delete('/{id}', [GuarantorController::class, 'destroy']); // Remove guarantor from loan
+    // Loan Applications
+    Route::prefix('loan-applications')->group(function () {
+        Route::get('/', [LoanApplicationController::class, 'index']);
+        Route::post('/', [LoanApplicationController::class, 'store']);
+        Route::get('/{id}', [LoanApplicationController::class, 'show']);
+        Route::put('/{id}', [LoanApplicationController::class, 'update']);
+        Route::delete('/{id}', [LoanApplicationController::class, 'destroy']);
+        Route::post('/{id}/submit', [LoanApplicationController::class, 'submit']);
+        Route::post('/{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
 
+    // Guarantors
     Route::prefix('guarantors')->group(function () {
-        Route::get('/{id}', [GuarantorController::class, 'show']); // Get specific guarantor
-        Route::post('/{id}/documents', [GuarantorController::class, 'uploadDocument']); // Upload verification document
-        Route::get('/{id}/documents', [GuarantorController::class, 'getDocuments']); // Get verification documents
-        Route::get('/{id}/qr-code', [GuarantorController::class, 'getQRCode']); // Get QR code
-        Route::post('/{id}/verify', [GuarantorController::class, 'verify'])->middleware('admin'); // Verify guarantor (admin)
+        Route::get('/', [GuarantorController::class, 'index']);
+        Route::post('/', [GuarantorController::class, 'store']);
+        Route::get('/{id}', [GuarantorController::class, 'show']);
+        Route::put('/{id}', [GuarantorController::class, 'update']);
+        Route::delete('/{id}', [GuarantorController::class, 'destroy']);
+        Route::post('/{id}/invite', [GuarantorController::class, 'sendInvitation']);
+        Route::post('/{id}/verify', [GuarantorController::class, 'verify']);
+        Route::post('/{id}/approve', [GuarantorController::class, 'approve']);
+        Route::post('/{id}/reject', [GuarantorController::class, 'reject']);
     });
 
-    Route::prefix('guarantor')->group(function () {
-        Route::get('/pending-requests', [GuarantorController::class, 'myPendingRequests']); // Get user's pending guarantor requests
-        Route::get('/my-obligations', [GuarantorController::class, 'myObligations']); // Get user's guarantor obligations
+    // Loans (for viewing loan details)
+    Route::prefix('loans')->group(function () {
+        Route::get('/', [LoanController::class, 'index']);
+        Route::get('/{id}', [LoanController::class, 'show']);
+        Route::get('/{id}/repayment-schedule', [LoanController::class, 'repaymentSchedule']);
+        Route::post('/{id}/repay', [LoanController::class, 'makeRepayment']);
     });
 
-    // Guarantor invitation public routes (no auth required)
+    // Admin routes
+    Route::prefix('admin')->middleware('role:admin,super_admin')->group(function () {
+        Route::get('/dashboard', [AdminController::class, 'dashboard']);
+        Route::get('/statistics', [AdminController::class, 'statistics']);
+        
+        // User management
+        Route::get('/users', [AdminController::class, 'users']);
+        Route::get('/users/{id}', [AdminController::class, 'showUser']);
+        Route::put('/users/{id}', [AdminController::class, 'updateUser']);
+        Route::delete('/users/{id}', [AdminController::class, 'deleteUser']);
+        Route::post('/users/{id}/activate', [AdminController::class, 'activateUser']);
+        Route::post('/users/{id}/deactivate', [AdminController::class, 'deactivateUser']);
+        
+        // Loan management
+        Route::get('/loan-applications', [AdminController::class, 'loanApplications']);
+        Route::post('/loan-applications/{id}/approve', [AdminController::class, 'approveLoan']);
+        Route::post('/loan-applications/{id}/reject', [AdminController::class, 'rejectLoan']);
+        Route::post('/loan-applications/{id}/disburse', [AdminController::class, 'disburseLoan']);
+        
+        // KYC management
+        Route::get('/kyc-verifications', [AdminController::class, 'kycVerifications']);
+        Route::post('/kyc-verifications/{id}/approve', [AdminController::class, 'approveKYC']);
+        Route::post('/kyc-verifications/{id}/reject', [AdminController::class, 'rejectKYC']);
+        
+        // Reports
+        Route::get('/reports/loans', [AdminController::class, 'loanReports']);
+        Route::get('/reports/members', [AdminController::class, 'memberReports']);
+        Route::get('/reports/financial', [AdminController::class, 'financialReports']);
+    });
+
+    // Super Admin routes
+    Route::prefix('super-admin')->middleware('role:super_admin')->group(function () {
+        Route::get('/dashboard', [SuperAdminController::class, 'dashboard']);
+        
+        // Global settings
+        Route::get('/settings', [SuperAdminController::class, 'getSettings']);
+        Route::put('/settings', [SuperAdminController::class, 'updateSettings']);
+        
+        // Admin management
+        Route::get('/admins', [SuperAdminController::class, 'admins']);
+        Route::post('/admins', [SuperAdminController::class, 'createAdmin']);
+        Route::put('/admins/{id}', [SuperAdminController::class, 'updateAdmin']);
+        Route::delete('/admins/{id}', [SuperAdminController::class, 'deleteAdmin']);
+        
+        // Loan type management
+        Route::post('/loan-types', [SuperAdminController::class, 'createLoanType']);
+        Route::put('/loan-types/{id}', [SuperAdminController::class, 'updateLoanType']);
+        Route::delete('/loan-types/{id}', [SuperAdminController::class, 'deleteLoanType']);
+        
+        // Audit logs
+        Route::get('/audit-logs', [SuperAdminController::class, 'auditLogs']);
+        Route::get('/audit-logs/{id}', [SuperAdminController::class, 'showAuditLog']);
+        
+        // System health
+        Route::get('/system/health', [SuperAdminController::class, 'systemHealth']);
+        Route::get('/system/stats', [SuperAdminController::class, 'systemStats']);
+    });
 });
 
-// Public guarantor invitation routes (for accepting via QR code)
-Route::prefix('guarantor-invitations')->group(function () {
-    Route::post('/{token}/accept', [GuarantorController::class, 'acceptByToken']); // Accept invitation via QR token
-    Route::post('/{token}/decline', [GuarantorController::class, 'declineByToken']); // Decline invitation via QR token
+// Health check endpoint (public)
+Route::get('/health', function () {
+    return response()->json([
+        'status' => 'ok',
+        'timestamp' => now()->toIso8601String(),
+        'service' => 'CoopVest Africa API',
+        'version' => '1.0.0',
+    ]);
 });
