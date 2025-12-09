@@ -26,6 +26,13 @@ class User extends Authenticatable
         'two_fa_secret',
         'is_active',
         'last_login_at',
+        'firebase_uid',
+        'firebase_email_verified',
+        'firebase_disabled',
+        'firebase_metadata',
+        'firebase_custom_claims',
+        'phone_number',
+        'name',
     ];
 
     protected $hidden = [

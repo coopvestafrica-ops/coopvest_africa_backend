@@ -12,6 +12,7 @@ use App\Http\Controllers\LoanTypeController;
 use App\Http\Controllers\GuarantorController;
 use App\Http\Controllers\KYCController;
 use App\Http\Controllers\TwoFAController;
+use App\Http\Controllers\UserSyncController;
 
 /*
 |--------------------------------------------------------------------------
@@ -165,6 +166,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/system/health', [SuperAdminController::class, 'systemHealth']);
         Route::get('/system/stats', [SuperAdminController::class, 'systemStats']);
     });
+});
+
+// Firebase User Sync Routes
+Route::prefix('firebase')->group(function () {
+    // Public sync endpoint (requires Firebase token)
+    Route::post('/sync', [UserSyncController::class, 'sync']);
+    Route::get('/sync/status', [UserSyncController::class, 'status']);
+    
+    // Bulk sync endpoint (requires Firebase token)
+    Route::post('/sync/bulk', [UserSyncController::class, 'bulkSync']);
+});
+
+// Protected Firebase routes (require authentication)
+Route::middleware('auth:sanctum')->prefix('firebase')->group(function () {
+    Route::post('/sync', [UserSyncController::class, 'sync']);
+    Route::get('/sync/status', [UserSyncController::class, 'status']);
+    Route::post('/sync/bulk', [UserSyncController::class, 'bulkSync']);
 });
 
 // Health check endpoint (public)
