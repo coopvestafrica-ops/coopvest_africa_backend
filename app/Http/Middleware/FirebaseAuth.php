@@ -5,39 +5,16 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Kreait\Firebase\Factory;
-use Kreait\Firebase\Exception\Auth\FailedToVerifyToken;
-use Kreait\Firebase\Exception\AuthException;
+use App\Services\TokenVerificationService;
 use Illuminate\Support\Facades\Log;
 
 class FirebaseAuth
 {
-    /**
-     * Firebase instance
-     */
-    protected $firebase;
+    protected $tokenVerificationService;
 
-    /**
-     * Create a new middleware instance.
-     */
-    public function __construct()
+    public function __construct(TokenVerificationService $tokenVerificationService)
     {
-        try {
-            $credentialsPath = config('firebase.credentials_path');
-            
-            if (!file_exists($credentialsPath)) {
-                throw new \Exception("Firebase credentials file not found at: {$credentialsPath}");
-            }
-
-            $this->firebase = (new Factory)
-                ->withServiceAccount($credentialsPath)
-                ->create();
-        } catch (\Exception $e) {
-            Log::error('Firebase initialization failed: ' . $e->getMessage());
-            if (config('firebase.middleware.auth.throw_exceptions')) {
-                throw $e;
-            }
-        }
+        $this->tokenVerificationService = $tokenVerificationService;
     }
 
     /**
@@ -58,75 +35,79 @@ class FirebaseAuth
         $authHeader = $request->header('Authorization');
 
         if (!$authHeader) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Authorization header missing',
-                'error' => 'MISSING_AUTH_HEADER'
-            ], 401);
+            return $this->unauthorizedResponse('Authorization header missing', 'MISSING_AUTH_HEADER');
         }
 
         // Extract the token from "Bearer <token>"
         $parts = explode(' ', $authHeader);
         if (count($parts) !== 2 || $parts[0] !== 'Bearer') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid authorization header format',
-                'error' => 'INVALID_AUTH_FORMAT'
-            ], 401);
+            return $this->unauthorizedResponse('Invalid authorization header format', 'INVALID_AUTH_FORMAT');
         }
 
         $token = $parts[1];
 
+        // Validate token format
+        if (!$this->tokenVerificationService->isValidTokenFormat($token)) {
+            return $this->unauthorizedResponse('Invalid token format', 'INVALID_TOKEN_FORMAT');
+        }
+
         try {
-            // Verify the ID token
-            if (!$this->firebase) {
-                throw new \Exception('Firebase not initialized');
+            // Verify the token
+            $verificationResult = $this->tokenVerificationService->verifyToken($token);
+
+            if (!$verificationResult) {
+                return $this->unauthorizedResponse('Invalid or expired token', 'INVALID_TOKEN');
             }
 
-            $auth = $this->firebase->getAuth();
-            
-            if (!config('firebase.admin_sdk.verify_id_token')) {
-                return $next($request);
-            }
+            // Store the verification result in the request
+            $request->attributes->set('firebase_uid', $verificationResult['uid']);
+            $request->attributes->set('firebase_email', $verificationResult['email']);
+            $request->attributes->set('firebase_token', $verificationResult['token']);
+            $request->attributes->set('authenticated_user', $verificationResult['user']);
 
-            $verifiedIdToken = $auth->verifyIdToken($token);
-            $uid = $verifiedIdToken->claims()->get('sub');
-
-            // Store the user ID in the request for later use
-            $request->attributes->set('firebase_uid', $uid);
-            $request->attributes->set('firebase_token', $verifiedIdToken);
-
-            Log::info('Firebase token verified for user: ' . $uid);
+            Log::info('Firebase token verified', [
+                'uid' => $verificationResult['uid'],
+                'user_id' => $verificationResult['user']->id,
+            ]);
 
             return $next($request);
-        } catch (FailedToVerifyToken $e) {
-            Log::warning('Firebase token verification failed: ' . $e->getMessage());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid or expired token',
-                'error' => 'INVALID_TOKEN'
-            ], 401);
-        } catch (AuthException $e) {
-            Log::error('Firebase auth exception: ' . $e->getMessage());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Authentication service error',
-                'error' => 'AUTH_ERROR'
-            ], 500);
         } catch (\Exception $e) {
-            Log::error('Firebase middleware error: ' . $e->getMessage());
-            
+            Log::error('Firebase auth middleware error', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
             if (config('firebase.middleware.auth.throw_exceptions')) {
                 return response()->json([
                     'success' => false,
-                    'message' => $e->getMessage(),
-                    'error' => 'MIDDLEWARE_ERROR'
+                    'message' => 'Authentication service error',
+                    'error' => 'AUTH_ERROR',
                 ], 500);
             }
 
             return $next($request);
         }
+    }
+
+    /**
+     * Return unauthorized response
+     *
+     * @param string $message
+     * @param string $error
+     * @return Response
+     */
+    protected function unauthorizedResponse(string $message, string $error): Response
+    {
+        Log::warning('Unauthorized request', [
+            'message' => $message,
+            'error' => $error,
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'error' => $error,
+        ], 401);
     }
 }

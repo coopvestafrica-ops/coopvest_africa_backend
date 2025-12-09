@@ -23,12 +23,38 @@ return new class extends Migration
             $table->text('two_fa_secret')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamp('last_login_at')->nullable();
+            
+            // Firebase Integration Fields
+            $table->string('firebase_uid')->unique()->nullable();
+            $table->string('firebase_email')->nullable();
+            $table->timestamp('firebase_synced_at')->nullable();
+            $table->json('firebase_metadata')->nullable();
+            
+            // Additional Profile Fields
+            $table->string('profile_photo_url')->nullable();
+            $table->text('bio')->nullable();
+            $table->string('date_of_birth')->nullable();
+            $table->enum('gender', ['male', 'female', 'other'])->nullable();
+            $table->string('address')->nullable();
+            $table->string('city')->nullable();
+            $table->string('state')->nullable();
+            $table->string('postal_code')->nullable();
+            $table->string('id_number')->nullable();
+            $table->enum('id_type', ['passport', 'national_id', 'drivers_license'])->nullable();
+            
+            // Account Status
+            $table->enum('account_status', ['active', 'suspended', 'deactivated'])->default('active');
+            $table->timestamp('suspended_at')->nullable();
+            $table->text('suspension_reason')->nullable();
+            
             $table->rememberToken();
             $table->timestamps();
-            
+
             $table->index('email');
+            $table->index('firebase_uid');
             $table->index('role');
             $table->index('kyc_status');
+            $table->index('account_status');
         });
     }
 
